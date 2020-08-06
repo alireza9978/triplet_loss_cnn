@@ -21,6 +21,8 @@ def load_data_set():
 
     x_train = np.concatenate([x_train, x_test])
     y_train = np.concatenate([y_train, y_test])
+    x_train = x_train / 255.0
+    x_train = x_train[..., tf.newaxis]
 
     classes = []
     for i in range(class_count):
@@ -77,7 +79,7 @@ def make_model():
     output_layer = layers.ReLU()(output_layer)
     output_layer = layers.Dense(embedding_size)(output_layer)
     classified_layer = layers.ReLU()(output_layer)
-    classified_layer = layers.Dense(1)(classified_layer)
+    classified_layer = layers.Dense(class_count)(classified_layer)
     classified_layer = layers.Softmax()(classified_layer)
     return tf.keras.Model(inputs=input_layer, outputs=[output_layer, classified_layer])
 
@@ -109,7 +111,7 @@ checkpoint = tf.train.Checkpoint(generator_optimizer=model_optimizer, model=mode
 
 @tf.function
 def train_step(x, y):
-    x = tf.reshape(x, (3, -1, 28, 28))
+    x = tf.reshape(x, (3, -1, 28, 28, 1))
     y = tf.reshape(y, (-1, 1))
     input_image_anchor = x[0]
     input_image_positive = x[1]
@@ -119,8 +121,7 @@ def train_step(x, y):
         model_output_positive, model_output_positive_class = model(input_image_positive, training=True)
         model_output_negative, model_output_negative_class = model(input_image_negative, training=True)
 
-        losses = [triplet_loss(model_output_anchor, model_output_positive, model_output_negative),
-                  classification_loss(y, model_output_anchor_class),
+        losses = [classification_loss(y, model_output_anchor_class),
                   classification_loss(y, model_output_positive_class),
                   classification_loss(y, model_output_negative_class)]
 
