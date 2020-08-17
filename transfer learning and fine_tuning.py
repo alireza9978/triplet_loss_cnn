@@ -4,16 +4,16 @@ import time
 import numpy as np
 import scipy.io
 import tensorflow as tf
-import tensorflow.keras.layers as layers
 import tensorflow_addons as tfa
 from skimage.transform import resize
 from sklearn.model_selection import train_test_split
+from tensorflow.keras import layers
 from tensorflow.keras.utils import to_categorical
 
 log_dir = "logs/"
 BATCH_SIZE = 64
 BUFFER_SIZE = 1000
-images_shape = [256, 256, 3]
+images_shape = [256, 256, 1]
 images_size = (256, 256)
 embedding_size = 64
 class_count = 2
@@ -29,9 +29,7 @@ def load_data_set():
 
     y = np.concatenate([np.zeros(normal_data.shape[0]), np.ones(abnormal_data.shape[0])])
     x = np.concatenate([normal_data, abnormal_data])
-    x = x.astype("float32")
-    x = np.divide(x, x.max())
-    x = np.multiply(x, 255.0)
+    x = x.astype("float32") / x.max()
     new_x = []
     for image in x:
         trim_image = image[~np.all(image == 0, axis=1)]
@@ -39,7 +37,7 @@ def load_data_set():
         new_x.append(resized_image)
 
     x = np.array(new_x)
-    x = np.repeat(x[..., np.newaxis], 3, -1)
+    x = np.expand_dims(x, axis=-1)
     y_categorical = to_categorical(y, class_count)
 
     x_train, x_test, y_train_categorical, y_test_categorical, y_train, y_test = train_test_split(x, y_categorical, y,
@@ -52,20 +50,25 @@ def load_data_set():
 
 def make_model():
     input_layer = layers.Input(shape=images_shape)
-    base_model = tf.keras.applications.VGG16(input_shape=images_shape,
-                                             include_top=False,
-                                             weights='imagenet',
-                                             input_tensor=input_layer)
-    base_model.trainable = False
-    global_average_layer = tf.keras.layers.GlobalAveragePooling2D()(base_model.output)
-    output_layer = layers.Dense(256)(global_average_layer)
+    output_layer = layers.Conv2D(64, (2, 2), padding='same')(input_layer)
+    output_layer = layers.BatchNormalization()(output_layer)
+    output_layer = layers.ReLU()(output_layer)
+    output_layer = layers.MaxPooling2D()(output_layer)
+    output_layer = layers.Dropout(0.3)(output_layer)
+    output_layer = layers.Conv2D(32, (2, 2), padding='same')(output_layer)
+    output_layer = layers.MaxPooling2D()(output_layer)
     output_layer = layers.ReLU()(output_layer)
     output_layer = layers.Dropout(0.3)(output_layer)
-    output_layer = layers.Dense(128)(output_layer)
+    output_layer = layers.Flatten()(output_layer)
     output_layer = layers.ReLU()(output_layer)
     output_layer = layers.Dropout(0.3)(output_layer)
+    output_layer = layers.Dense(1024)(output_layer)
+    output_layer = layers.Dropout(0.3)(output_layer)
+    output_layer = layers.ReLU()(output_layer)
+    output_layer = layers.Dense(100)(output_layer)
+    output_layer = layers.Dropout(0.3)(output_layer)
+    output_layer = layers.ReLU()(output_layer)
     embedding_layer = layers.Dense(embedding_size)(output_layer)
-    embedding_layer = layers.ReLU()(embedding_layer)
     output_layer = layers.Dense(class_count)(embedding_layer)
     output_layer = layers.Softmax()(output_layer)
     return tf.keras.Model(inputs=input_layer, outputs=[embedding_layer, output_layer])
